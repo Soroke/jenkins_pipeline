@@ -1,0 +1,40 @@
+@Library('my-share') _
+import hudson.model.*;
+pipeline {
+    agent any
+	environment {
+		//jenkins上SVN账号的ID Jenkins->凭据->系统->全局凭据->
+		//找到需要切换的账号，点击更新按钮找到当前用户的ID 替换到这里，就会使用这个账号执行svn操作
+		svnUserID = "eb626597-f71f-4a3a-8b09-9871695adcaf"
+	}
+	tools ('加载工具') {
+		maven 'maven-3.6.2'
+		jdk 'jdk-1.8'
+	}
+	triggers {
+	  pollSCM 'H/5 * * * *'
+	}
+    stages {
+        stage ('从SVN获取项目代码') {
+			options { skipDefaultCheckout() }
+            steps {
+				script {
+						checkout_svn "http://1.119.142.186:82/svn/svndate/Develop/法治宝典/Code/ssm-parent","fz-ssm-parent"
+						checkout_svn "http://1.119.142.186:82/svn/svndate/Develop/法治宝典/Code/ssm","fz-ssm"
+						checkout_svn "http://1.119.142.186:82/svn/svndate/Frame/Code/ssm_parent","ssm-parent"
+						checkout_svn "http://1.119.142.186:82/svn/svndate/Frame/Code/ssm","ssm"
+				}
+            }
+        }
+        stage('编译框架') {
+			steps {
+				script {
+					compile.compileMavenFrame "ssm-parent"
+					compile.compileMavenFrame "ssm"
+					compile.compileMavenFrame "fz-ssm-parent"
+					compile.compileMavenFrame "fz-ssm"
+				}
+			}
+        }
+    }
+}

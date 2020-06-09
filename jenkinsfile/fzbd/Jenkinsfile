@@ -1,0 +1,139 @@
+@Library('my-share') _
+import hudson.model.*;
+pipeline {
+    agent any
+	environment {
+		ymlFileSvnUrl = "http://1.119.142.186:82/svn/svndate/Test/自动化测试/测试脚本/20170714-jenkins配置ant/antxml/yml/fzbd"
+		ymlLocalPath = "${env.WORKSPACE}/yml/fztest.yml"
+		ymlLocalPathDocker = "${env.WORKSPACE}/yml/fzdocker.yml"
+		iniFileSvnUrl = "http://1.119.142.186:82/svn/svndate/Test/自动化测试/jenkins/pipeline/ini/fzbd"
+		iniLocalPath = "${env.WORKSPACE}/ini/fzbd.ini"
+		//jenkins上SVN账号的ID Jenkins->凭据->系统->全局凭据->
+		//找到需要切换的账号，点击更新按钮找到当前用户的ID 替换到这里，就会使用这个账号执行svn操作
+		svnUserID = "eb626597-f71f-4a3a-8b09-9871695adcaf"
+	}
+	tools ('加载工具') {
+		maven 'maven-3.6.2'
+		jdk 'jdk-1.8'
+		ant 'ant-1.9.11'
+	}
+	parameters {
+	  choice choices: ['NO', 'YES'], description: '是否清理覆盖率报告', name: 'cleanReport'
+	}
+	stages {
+		stage('优先获取ini配置文件') {
+			steps {
+				script {
+					checkout_svn "${env.iniFileSvnUrl}","ini"
+				}
+			}
+		}
+        stage ('从SVN获取项目代码') {
+			failFast true
+			parallel {
+				stage('部署项目检查SVN代码更新') {
+					steps {
+						script { 
+							checkout_svn.deployProject "${env.projectlist}"
+						}
+					}
+				}
+				stage('框架获取') {
+					steps {
+						script { 
+							def fzservicesvn = get_ini "svn.fzservice"
+							def fzssmParentsvn = get_ini "svn.fzssmParent"
+							def fzssmsvn = get_ini "svn.fzssm"
+							checkout_svn "${fzservicesvn}","fzservice"
+							checkout_svn "${fzssmParentsvn}","fzssmParent"
+							checkout_svn "${fzssmsvn}","fzssm"
+						}
+					}
+				}
+			}
+		}
+		
+		stage('获取配置文件、编译框架'){
+			failFast true
+			parallel {
+				stage('从SVN获取部署所需配置文件') {
+					steps {
+						script {
+							checkout_svn "${env.ymlFileSvnUrl}","yml"
+						}
+					}
+				}
+				stage('service编译'){
+					steps {
+						script {
+							compile.compileMavenFrame "fzservice"
+							compile.compileMavenFrame "fzssmParent"
+							compile.compileMavenFrame "fzssm"
+						}
+					}
+				}
+			}
+		}
+
+		stage('项目编译'){
+			failFast true
+			parallel {
+				stage('前端项目编译') {
+					steps {
+						script {
+							compile.qd "${env.projectlist}"
+						}
+					}
+				}
+				stage('后台项目编译') {
+					steps {
+						script {
+							compile.ht "${env.projectlist}"
+						}
+					}
+				}
+			}
+		}
+		
+		stage('docker方式替换部署配置文件') {
+			steps {
+				script {
+					replacement_configuration "${env.ymlLocalPathDocker}","${env.projectlist}"
+				}
+			}
+		}
+		
+		stage('docker方式部署部署项目'){
+			steps {
+				script {
+					old_deploy.deployFZBD "${env.projectList}","docker"
+				}
+			}
+		}
+		
+		stage('非docker方式替换配置文件') {
+			steps {
+				script {
+					replacement_configuration "${env.ymlLocalPath}","${env.projectlist}"
+				}
+			}
+		}
+		
+		stage('非docker方式部署项目'){
+			steps {
+				script {
+					old_deploy.deployFZBD "${env.projectList}","other"
+				}
+			}
+		}
+		
+		/**
+		stage('清理覆盖率报告'){
+			steps {
+				script {
+					coverage.isCleanCoverageReport "${cleanReport}"
+				}
+			}
+		}**/
+	}
+}

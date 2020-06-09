@@ -1,0 +1,105 @@
+@Library('my-share') _
+import hudson.model.*;
+pipeline {
+    agent any
+	environment {
+		ymlFileSvnUrl = "http://124.193.92.18:82/svn/svndate/Test/自动化测试/测试脚本/20170714-jenkins配置ant/antxml/yml/hy"
+		ymlLocalPath = "${env.WORKSPACE}/yml/dev.yml"
+		iniFileSvnUrl = "http://124.193.92.18:82/svn/svndate/Test/自动化测试/jenkins/pipeline/ini/hy"
+		iniLocalPath = "${env.WORKSPACE}/ini/hy.ini"
+	}
+	tools ('加载工具') {
+		maven 'maven-3.6.2'
+		jdk 'jdk-1.6'
+		ant 'ant-1.9.11'
+	}
+	stages {
+		stage('优先获取ini配置文件') {
+			steps {
+				script {
+					checkout_svn "${env.iniFileSvnUrl}","ini"
+				}
+			}
+		}
+		stage('checkout项目代码和配置文件'){
+			failFast true
+			parallel {
+				stage('从SVN获取项目代码') {
+					steps {
+						script {
+							checkout_svn.deployProject "${projectlist}"
+							def serviceSvn=get_ini "svn.service"
+							def ioifSvn=get_ini "svn.ioif"
+							checkout_svn "${serviceSvn}","service"
+							checkout_svn "${ioifSvn}","ioif"
+						}
+					}
+				}
+				stage('从SVN获取部署所需配置文件'){
+					steps {
+						script {
+							checkout_svn "${env.ymlFileSvnUrl}","yml"
+						}
+					}
+				}
+			}
+		}
+		
+		stage('框架编译'){
+			failFast true
+			parallel {
+				stage('编译service') {
+					steps {
+						script {
+							compile.compileAntFrame "service"
+						}
+					}
+				}
+				stage('编译IOIF') {
+					steps {
+						script {
+							compile.compileAntFrame "ioif"
+						}
+					}
+				}
+			}
+		}
+		
+		stage('项目编译'){
+			failFast true
+			parallel {
+				stage('前端项目编译') {
+					steps {
+						script {
+							compile.qd "${env.projectlist}"
+						}
+					}
+				}
+				stage('后台项目编译') {
+					steps {
+						script {
+							compile.ht "${env.projectlist}"
+						}
+					}
+				}
+			}
+		}
+		
+		stage('替换配置文件'){
+			steps {
+				script {
+					replacement_configuration "${env.ymlLocalPath}","${projectlist}"
+				}
+			}
+		}
+		
+		stage('部署项目'){
+			steps {
+				script {
+					old_deploy "${projectlist}"
+				}
+			}
+		}
+	}
+}	
+		

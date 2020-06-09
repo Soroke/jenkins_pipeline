@@ -1,0 +1,136 @@
+@Library('my-share') _
+import hudson.model.*;
+pipeline {
+    agent any
+	environment {
+		ymlFileSvnUrl = "http://1.119.142.186:82/svn/svndate/Test/自动化测试/测试脚本/20170714-jenkins配置ant/antxml/yml/bot"
+		ymlLocalPath = "${env.WORKSPACE}/yml/application.properties"
+		iniFileSvnUrl = "http://1.119.142.186:82/svn/svndate/Test/自动化测试/jenkins/pipeline/ini/bot"
+		iniLocalPath = "${env.WORKSPACE}/ini/bot.ini"
+		//jenkins上SVN账号的ID Jenkins->凭据->系统->全局凭据->
+		//找到需要切换的账号，点击更新按钮找到当前用户的ID 替换到这里，就会使用这个账号执行svn操作
+		svnUserID = "eb626597-f71f-4a3a-8b09-9871695adcaf"
+	}
+	tools ('加载工具') {
+		maven 'maven-3.6.2'
+		jdk 'jdk-1.8'
+	}
+	stages {
+		stage('优先获取ini配置文件') {
+			steps {
+				script {
+					checkout_svn "${env.iniFileSvnUrl}","ini"
+				}
+			}
+		}
+
+		stage('checkout项目代码和配置文件'){
+			failFast true
+			parallel {
+				stage('从SVN获取smartqaui项目代码到win节点机') {
+					agent { label 'windows server 2008' } 
+					steps {
+						script {
+							def uiSvn=get_ini "svn.smartqaui"
+							checkout([$class: 'SubversionSCM', additionalCredentials: [], excludedCommitMessages: '', excludedRegions: '', excludedRevprop: '', excludedUsers: '', filterChangelog: false, ignoreDirPropChanges: false, includedRegions: '', locations: [[cancelProcessOnExternalsFail: true, credentialsId: 'eb626597-f71f-4a3a-8b09-9871695adcaf', depthOption: 'infinity', ignoreExternalsOption: true, local: 'smartqaui', remote: "${uiSvn}"]], quietOperation: true, workspaceUpdater: [$class: 'UpdateUpdater']])
+						}
+					}
+				}
+				stage('从SVN获取yml配置文件和smartqa项目代码'){
+					steps {
+						script {
+							def qaSvn=get_ini "svn.smartqa"
+							checkout_svn "${qaSvn}","smartqa"
+							checkout_svn "${env.ymlFileSvnUrl}","yml"
+							sh """mkdir -p ${env.WORKSPACE}/compfile/smartqaui"""
+						}
+					}
+				}
+			}
+		}
+
+		stage('项目编译'){
+			failFast true
+			parallel {
+				stage('前端项目smartqaui编译') {
+					agent { label 'windows server 2008' } 
+					steps {
+						script {
+							projects=projectlist.split(",")
+							for(int i=0;i<projects.size();i++){
+								if (projects[i].equals("smartqaui")) {
+									bat """
+									cd smartqaui
+									npm install"""
+
+									bat """
+									cd smartqaui
+									rd /s /Q dist
+									md dist
+									npm run build
+									"""
+
+									bat"""
+									echo smartqaui %SVN_REVISION% > D:\\new_jenkins\\workspace\\bot_pipeline\\smartqaui\\dist\\version.txt
+									echo y | pscp -P 29050 -i root -pw cd2ee4f99 -r D:\\new_jenkins\\workspace\\bot_pipeline\\smartqaui\\dist\\ root@192.168.1.12:/usr/local/jenkin_docker/jenkins_home/workspace/bot_pipeline/compfile/smartqaui
+									"""
+								}
+							}
+						}
+					}
+				}
+				stage('后台项目smartqa编译') {
+					steps {
+						script {
+							projects=projectlist.split(",")
+							for(int i=0;i<projects.size();i++){
+								if (projects[i].equals("smartqa")) {
+									sh """cd ${env.WORKSPACE}/smartqa && mvn clean package install"""
+									//检查编译完成后target文件夹下的目录是否存在，存在copy到compile目录下
+									sh """if [ ! -d "${env.WORKSPACE}/compfile/smartqa" ];then
+												mkdir -p ${env.WORKSPACE}/compfile/smartqa
+											else
+												rm -rf ${env.WORKSPACE}/compfile/smartqa
+												mkdir -p ${env.WORKSPACE}/compfile/smartqa
+											fi"""
+									def jarPath=WORKSPACE + "/smartqa/target/smartqa.jar"
+									sh """rm -rf ${env.WORKSPACE}/compfile/smartqa && mkdir -p ${env.WORKSPACE}/compfile/smartqa && cd ${env.WORKSPACE}/compfile && cp -r ${jarPath} ${env.WORKSPACE}/compfile/smartqa && cp -r ${env.WORKSPACE}/smartqa/version.txt ${env.WORKSPACE}/compfile/smartqa"""
+									sh """
+									if [ ! -d ${env.WORKSPACE}/compfile/smartqa/config ];then
+										mkdir -p ${env.WORKSPACE}/compfile/smartqa/config
+									fi"""
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		stage('修改smartqaui的配置文件'){
+			steps {
+				script {
+					common.modifyFile "${env.WORKSPACE}/compfile/smartqaui/static/demo_config.js","var DEMO_URL =","var DEMO_URL = \"http://rrl.t.faxuan.net/botps/portal.html?channelNo=0\";"
+				}
+			}
+		}
+
+		
+		stage('复制application.properties配置文件'){
+			steps {
+				script {
+					sh """rm -rf ${env.WORKSPACE}/compfile/smartqa/config && mkdir -p ${env.WORKSPACE}/compfile/smartqa/config && cp ${env.WORKSPACE}/yml/application.properties ${env.WORKSPACE}/compfile/smartqa/config"""
+				}
+			}
+		}
+		
+		stage('部署项目'){
+			steps {
+				script {
+					old_deploy "${projectlist}"
+				}
+			}
+		}
+	}
+}	
+		

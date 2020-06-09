@@ -1,0 +1,29 @@
+@Library('my-share') _
+import hudson.model.*;
+pipeline {
+    agent any
+	environment {
+		ymlFileSvnUrl = "http://1.119.142.186:82/svn/svndate/Test/自动化测试/测试脚本/20170714-jenkins配置ant/antxml/yml/uc"
+		ymlLocalPath = "${env.WORKSPACE}/yml/test.yml"
+		iniFileSvnUrl = "http://1.119.142.186:82/svn/svndate/Test/自动化测试/jenkins/pipeline/ini/pipeline_test_ini"
+		iniLocalPath = "${env.WORKSPACE}/ini/test.ini"
+		//jenkins上SVN账号的ID Jenkins->凭据->系统->全局凭据->
+		//找到需要切换的账号，点击更新按钮找到当前用户的ID 替换到这里，就会使用这个账号执行svn操作
+		svnUserID = "eb626597-f71f-4a3a-8b09-9871695adcaf"
+	}
+	tools ('加载工具') {
+		maven 'maven-3.6.2'
+		jdk 'jdk-1.8'
+	}
+	stages {
+		stage('设置描述'){
+			steps {
+				script {
+					mobile.modifyiOSVersion "2.3.5","123"
+					common.setDescription("<img src='https://ss1.bdstatic.com/70cFuXSh_Q1YnxGkpoWK1HF6hhy/it/u=2915449934,3377305849&fm=26&gp=0.jpg' width=200px heigth=200px></br><a href='http://d.7short.com/bxfzbd' target='_blank'>第三方平台下载</a>")
+				}
+			}
+		}
+	}
+}	
+		
